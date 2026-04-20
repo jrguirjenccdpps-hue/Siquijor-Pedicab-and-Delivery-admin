@@ -681,7 +681,7 @@
         .quick-btn {
             padding: 12px 25px;
             background: white;
-            border: 2px solid #E0E0E0;
+            border: 2px solid #E0E0F0;
             border-radius: 12px;
             cursor: pointer;
             font-weight: 600;
@@ -1049,7 +1049,11 @@
     <div class="toast" id="toast">Action completed successfully!</div>
 
     <script>
-        const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxe7Uczf9vWbj_JNFLjazYLoZuxSecu7D0saiPhYU0FAFn7HwErQGDVJ0y-awrw0zJh/exec';
+        // ============================================
+        // FIXED: Updated Google Apps Script URL
+        // ============================================
+        // IMPORTANT: Replace this with your actual deployed web app URL
+        const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbyR2TtkpoVBJQqNhkQumQnFqkM0ko3zfQlHlvk4CK2l_bS6GUEbxfLTUbWDlDzOvCft/exec';
         
         let currentAdmin = null;
         let allBookings = [];
@@ -1096,6 +1100,10 @@
             try {
                 const response = await fetch(GOOGLE_SHEETS_URL, {
                     method: 'POST',
+                    mode: 'cors',  // FIXED: Added CORS mode
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
                     body: JSON.stringify({
                         type: 'authenticate',
                         role: 'admin',
@@ -1136,23 +1144,47 @@
             location.reload();
         }
 
+        // ============================================
+        // FIXED: loadData with proper error handling and URL format
+        // ============================================
         async function loadData() {
             try {
-                // Fetch all data from Google Sheets
-                const response = await fetch(GOOGLE_SHEETS_URL + '?action=get_all_data');
+                showToast('🔄 Loading data...');
+                
+                // FIXED: Proper URL construction for GET request
+                const url = new URL(GOOGLE_SHEETS_URL);
+                url.searchParams.append('action', 'get_all_data');
+                
+                console.log('Fetching from:', url.toString());
+                
+                const response = await fetch(url, {
+                    method: 'GET',
+                    mode: 'cors'
+                });
+                
+                if (!response.ok) {
+                    throw new Error('HTTP error! status: ' + response.status);
+                }
+                
                 const result = await response.json();
+                console.log('API Response:', result);
                 
                 if (result.success) {
                     allBookings = result.bookings || [];
+                    console.log('Loaded bookings:', allBookings.length);
+                    console.log('Pending count:', result.pendingVerifications);
+                    
                     updateStats(result);
                     renderVerifications();
                     renderAllBookings();
                     renderDrivers();
+                    showToast('✅ Data loaded successfully!');
                 } else {
-                    throw new Error(result.message);
+                    throw new Error(result.message || 'Unknown error');
                 }
             } catch (error) {
-                console.log('Using demo data:', error);
+                console.error('Load error:', error);
+                showToast('⚠️ Using demo data - ' + error.message);
                 loadDemoData();
             }
         }
@@ -1231,9 +1263,19 @@
             document.getElementById('activeDrivers').textContent = activeDrivers;
         }
 
+        // ============================================
+        // FIXED: renderVerifications with proper status checking
+        // ============================================
         function renderVerifications() {
             const container = document.getElementById('verificationsList');
-            const pending = allBookings.filter(b => b.status === 'pending_verification');
+            
+            // FIXED: Check for both 'pending_verification' and handle case variations
+            const pending = allBookings.filter(b => {
+                const status = (b.status || '').toString().trim().toLowerCase();
+                return status === 'pending_verification';
+            });
+            
+            console.log('Rendering verifications. Pending count:', pending.length);
             
             if (pending.length === 0) {
                 container.innerHTML = `
@@ -1246,7 +1288,6 @@
                 return;
             }
 
-            // Use event delegation - store booking ID in data attribute
             container.innerHTML = pending.map(booking => `
                 <div class="booking-card pending" data-booking-id="${booking.id}">
                     <div class="booking-header">
@@ -1317,7 +1358,10 @@
                 let statusClass = '';
                 let statusText = '';
                 
-                switch(booking.status) {
+                // FIXED: Normalize status for display
+                const status = (booking.status || '').toString().trim().toLowerCase();
+                
+                switch(status) {
                     case 'pending_verification':
                         statusClass = 'status-pending';
                         statusText = 'Pending Verification';
@@ -1336,11 +1380,11 @@
                         break;
                     default:
                         statusClass = 'status-pending';
-                        statusText = booking.status;
+                        statusText = booking.status || 'Unknown';
                 }
 
                 return `
-                    <div class="booking-card ${booking.status}" data-booking-id="${booking.id}">
+                    <div class="booking-card ${status}" data-booking-id="${booking.id}">
                         <div class="booking-header">
                             <div>
                                 <div class="booking-id">${booking.id}</div>
@@ -1454,12 +1498,19 @@
             }
         }
 
+        // ============================================
+        // FIXED: confirmVerification with proper fetch
+        // ============================================
         async function confirmVerification() {
             if (!currentVerifyId) return;
             
             try {
                 const response = await fetch(GOOGLE_SHEETS_URL, {
                     method: 'POST',
+                    mode: 'cors',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
                     body: JSON.stringify({
                         type: 'verify_payment',
                         bookingId: currentVerifyId,
@@ -1489,17 +1540,19 @@
                         pendingVerifications: allBookings.filter(b => b.status === 'pending_verification').length
                     });
                 } else {
-                    throw new Error(result.message);
+                    throw new Error(result.message || 'Verification failed');
                 }
             } catch (error) {
-                // Local update for demo
+                console.error('Verify error:', error);
+                
+                // Local update for demo/backup
                 const booking = allBookings.find(b => b.id === currentVerifyId);
                 if (booking) {
                     booking.status = 'available';
                     booking.verifiedAt = new Date().toISOString();
                 }
                 
-                showToast('✅ Payment verified! Released to drivers.');
+                showToast('✅ Payment verified locally! (API error: ' + error.message + ')');
                 closeVerifyModal();
                 renderVerifications();
                 renderAllBookings();
@@ -1547,7 +1600,10 @@
             let filtered = allBookings;
             
             if (filter !== 'all') {
-                filtered = allBookings.filter(b => b.status === filter || (filter === 'pending' && b.status === 'pending_verification'));
+                filtered = allBookings.filter(b => {
+                    const status = (b.status || '').toString().trim().toLowerCase();
+                    return status === filter || (filter === 'pending' && status === 'pending_verification');
+                });
             }
             
             // Re-render with filtered data
@@ -1578,7 +1634,7 @@
                         <strong>💰</strong> ₱${booking.fare} | <strong>Ref:</strong> ${booking.paymentRef}
                     </div>
                     <div class="booking-route">
-                        <span>${booking.pickup}</span>
+                                            <span>${booking.pickup}</span>
                         <i class="fas fa-arrow-right route-arrow"></i>
                         <span>${booking.destination}</span>
                     </div>
