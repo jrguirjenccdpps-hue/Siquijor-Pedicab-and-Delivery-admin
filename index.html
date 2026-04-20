@@ -300,12 +300,16 @@
             border-left: 5px solid var(--sunset-orange);
         }
 
-        .booking-card.verified {
+        .booking-card.available {
             border-left: 5px solid var(--success-green);
         }
 
         .booking-card.accepted {
             border-left: 5px solid var(--ocean-blue);
+        }
+
+        .booking-card.completed {
+            border-left: 5px solid var(--admin-purple);
         }
 
         .booking-header {
@@ -331,9 +335,9 @@
         }
 
         .status-pending { background: rgba(255,193,7,0.1); color: #F59E0B; }
-        .status-verified { background: rgba(46,204,113,0.1); color: #2ECC71; }
-        .status-available { background: rgba(52,152,219,0.1); color: #3498DB; }
-        .status-accepted { background: rgba(108,92,231,0.1); color: #6C5CE7; }
+        .status-available { background: rgba(46,204,113,0.1); color: #2ECC71; }
+        .status-accepted { background: rgba(52,152,219,0.1); color: #3498DB; }
+        .status-completed { background: rgba(108,92,231,0.1); color: #6C5CE7; }
 
         .booking-details {
             font-size: 13px;
@@ -956,8 +960,9 @@
                 <div class="filter-bar">
                     <button class="filter-btn active" onclick="filterBookings('all')">All</button>
                     <button class="filter-btn" onclick="filterBookings('pending')">Pending</button>
-                    <button class="filter-btn" onclick="filterBookings('verified')">Verified</button>
+                    <button class="filter-btn" onclick="filterBookings('available')">Available</button>
                     <button class="filter-btn" onclick="filterBookings('accepted')">Accepted</button>
+                    <button class="filter-btn" onclick="filterBookings('completed')">Completed</button>
                 </div>
 
                 <div class="booking-list" id="verificationsList">
@@ -1007,15 +1012,15 @@
                 </div>
                 <div style="margin-top: 20px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
                     <div style="background: #F8F9FA; padding: 20px; border-radius: 12px; text-align: center;">
-                        <div style="font-size: 24px; font-weight: 700; color: var(--success-green);">₱0</div>
+                        <div style="font-size: 24px; font-weight: 700; color: var(--success-green);" id="todayRevenue">₱0</div>
                         <div style="font-size: 12px; color: #666;">Today's Revenue</div>
                     </div>
                     <div style="background: #F8F9FA; padding: 20px; border-radius: 12px; text-align: center;">
-                        <div style="font-size: 24px; font-weight: 700; color: var(--ocean-blue);">0</div>
+                        <div style="font-size: 24px; font-weight: 700; color: var(--ocean-blue);" id="todayTrips">0</div>
                         <div style="font-size: 12px; color: #666;">Today's Trips</div>
                     </div>
                     <div style="background: #F8F9FA; padding: 20px; border-radius: 12px; text-align: center;">
-                        <div style="font-size: 24px; font-weight: 700; color: var(--admin-purple);">0%</div>
+                        <div style="font-size: 24px; font-weight: 700; color: var(--admin-purple);" id="completionRate">0%</div>
                         <div style="font-size: 12px; color: #666;">Completion Rate</div>
                     </div>
                 </div>
@@ -1050,10 +1055,9 @@
 
     <script>
         // ============================================
-        // FIXED: Updated Google Apps Script URL
+        // CONFIGURATION - UPDATE THIS URL AFTER DEPLOYMENT
         // ============================================
-        // IMPORTANT: Replace this with your actual deployed web app URL
-        const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbyR2TtkpoVBJQqNhkQumQnFqkM0ko3zfQlHlvk4CK2l_bS6GUEbxfLTUbWDlDzOvCft/exec';
+        const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbyaTmcVZJs7WPjcd4Th_FZ32pLBtbmerRT6lcJ-G1hV5T6DCMUiBffF8oI6PA8pNk8W/exec';
         
         let currentAdmin = null;
         let allBookings = [];
@@ -1079,30 +1083,20 @@
             const adminId = document.getElementById('adminId').value;
             const password = document.getElementById('adminPassword').value;
 
-            // Simulate authentication (replace with actual API call)
-            if (adminId === 'ADMIN001' && password === 'admin123') {
-                currentAdmin = {
-                    userId: 'ADMIN001',
-                    name: 'Admin User',
-                    position: 'Manager'
-                };
-                sessionStorage.setItem('adminSession', JSON.stringify(currentAdmin));
-                showDashboard();
-                loadData();
-                showToast('✅ Welcome back, Admin!');
-            } else {
-                // Try API authentication
-                authenticateWithAPI(adminId, password);
-            }
+            // Try API authentication first
+            authenticateWithAPI(adminId, password);
         }
 
+        // ============================================
+        // FIXED: Authentication with text/plain CORS bypass
+        // ============================================
         async function authenticateWithAPI(userId, password) {
             try {
                 const response = await fetch(GOOGLE_SHEETS_URL, {
                     method: 'POST',
-                    mode: 'cors',  // FIXED: Added CORS mode
+                    mode: 'cors',
                     headers: {
-                        'Content-Type': 'application/json',
+                        'Content-Type': 'text/plain;charset=utf-8',  // FIXED: Bypasses preflight CORS
                     },
                     body: JSON.stringify({
                         type: 'authenticate',
@@ -1111,6 +1105,7 @@
                         password: password
                     })
                 });
+                
                 const result = await response.json();
                 
                 if (result.success) {
@@ -1123,12 +1118,17 @@
                     showToast('❌ Invalid credentials');
                 }
             } catch (error) {
+                console.error('Auth error:', error);
                 showToast('❌ Connection error. Using demo mode.');
                 // Demo fallback
-                currentAdmin = { userId: userId, name: 'Admin', position: 'Manager' };
-                sessionStorage.setItem('adminSession', JSON.stringify(currentAdmin));
-                showDashboard();
-                loadDemoData();
+                if (userId === 'ADMIN001' && password === 'admin123') {
+                    currentAdmin = { userId: 'ADMIN001', name: 'Admin User', position: 'Manager' };
+                    sessionStorage.setItem('adminSession', JSON.stringify(currentAdmin));
+                    showDashboard();
+                    loadData();
+                } else {
+                    showToast('❌ Invalid demo credentials');
+                }
             }
         }
 
@@ -1145,13 +1145,12 @@
         }
 
         // ============================================
-        // FIXED: loadData with proper error handling and URL format
+        // FIXED: Data Loading with proper error handling
         // ============================================
         async function loadData() {
             try {
                 showToast('🔄 Loading data...');
                 
-                // FIXED: Proper URL construction for GET request
                 const url = new URL(GOOGLE_SHEETS_URL);
                 url.searchParams.append('action', 'get_all_data');
                 
@@ -1178,6 +1177,7 @@
                     renderVerifications();
                     renderAllBookings();
                     renderDrivers();
+                    updateAnalytics();
                     showToast('✅ Data loaded successfully!');
                 } else {
                     throw new Error(result.message || 'Unknown error');
@@ -1190,7 +1190,6 @@
         }
 
         function loadDemoData() {
-            // Demo data for testing
             allBookings = [
                 {
                     id: 'BK123456',
@@ -1236,19 +1235,36 @@
                     driverName: 'Mario Santos',
                     plateNumber: 'SIQ-1234',
                     timestamp: new Date().toISOString()
+                },
+                {
+                    id: 'BK123459',
+                    service: 'pedicab',
+                    customerName: 'Ana Reyes',
+                    phone: '09333222111',
+                    email: 'ana@email.com',
+                    pickup: 'Lazi Church',
+                    destination: 'Cambugahay Falls',
+                    fare: 250,
+                    paymentRef: 'PP789123456',
+                    status: 'completed',
+                    driverName: 'Maria Garcia',
+                    plateNumber: 'SIQ-9012',
+                    timestamp: new Date(Date.now() - 86400000).toISOString(),
+                    completedAt: new Date().toISOString()
                 }
             ];
             
             updateStats({
                 revenue: 2250,
                 commission: 450,
-                bookings_count: 3,
+                bookings_count: 4,
                 pendingVerifications: 1
             });
             
             renderVerifications();
             renderAllBookings();
             renderDrivers();
+            updateAnalytics();
         }
 
         function updateStats(data) {
@@ -1258,18 +1274,38 @@
             document.getElementById('pendingCount').textContent = data.pendingVerifications || 0;
             document.getElementById('verifyBadge').textContent = (data.pendingVerifications || 0) + ' Pending';
             
-            // Count active drivers
             const activeDrivers = drivers.filter(d => d.status === 'online').length;
             document.getElementById('activeDrivers').textContent = activeDrivers;
         }
 
+        function updateAnalytics() {
+            const today = new Date().toDateString();
+            const todayBookings = allBookings.filter(b => {
+                const bDate = new Date(b.timestamp).toDateString();
+                return bDate === today;
+            });
+            
+            const todayRevenue = todayBookings
+                .filter(b => b.status === 'completed')
+                .reduce((sum, b) => sum + (parseFloat(b.fare) || 0), 0);
+            
+            const todayTrips = todayBookings.filter(b => b.status === 'completed').length;
+            const totalTrips = allBookings.filter(b => b.status === 'completed').length;
+            const completionRate = allBookings.length > 0 
+                ? Math.round((totalTrips / allBookings.length) * 100) 
+                : 0;
+            
+            document.getElementById('todayRevenue').textContent = '₱' + todayRevenue.toLocaleString();
+            document.getElementById('todayTrips').textContent = todayTrips;
+            document.getElementById('completionRate').textContent = completionRate + '%';
+        }
+
         // ============================================
-        // FIXED: renderVerifications with proper status checking
+        // FIXED: Render functions with proper status normalization
         // ============================================
         function renderVerifications() {
             const container = document.getElementById('verificationsList');
             
-            // FIXED: Check for both 'pending_verification' and handle case variations
             const pending = allBookings.filter(b => {
                 const status = (b.status || '').toString().trim().toLowerCase();
                 return status === 'pending_verification';
@@ -1320,12 +1356,10 @@
                 </div>
             `).join('');
 
-            // Add event listeners using delegation
             attachBookingEventListeners(container);
         }
 
         function attachBookingEventListeners(container) {
-            // Use event delegation for all booking actions
             container.addEventListener('click', function(e) {
                 const btn = e.target.closest('.btn');
                 if (!btn) return;
@@ -1358,7 +1392,6 @@
                 let statusClass = '';
                 let statusText = '';
                 
-                // FIXED: Normalize status for display
                 const status = (booking.status || '').toString().trim().toLowerCase();
                 
                 switch(status) {
@@ -1375,7 +1408,7 @@
                         statusText = 'Driver Assigned';
                         break;
                     case 'completed':
-                        statusClass = 'status-verified';
+                        statusClass = 'status-completed';
                         statusText = 'Completed';
                         break;
                     default:
@@ -1499,7 +1532,7 @@
         }
 
         // ============================================
-        // FIXED: confirmVerification with proper fetch
+        // FIXED: Verification with text/plain CORS bypass
         // ============================================
         async function confirmVerification() {
             if (!currentVerifyId) return;
@@ -1509,7 +1542,7 @@
                     method: 'POST',
                     mode: 'cors',
                     headers: {
-                        'Content-Type': 'application/json',
+                        'Content-Type': 'text/plain;charset=utf-8',  // FIXED: Bypasses preflight CORS
                     },
                     body: JSON.stringify({
                         type: 'verify_payment',
@@ -1522,7 +1555,6 @@
                 const result = await response.json();
                 
                 if (result.success) {
-                    // Update local data
                     const booking = allBookings.find(b => b.id === currentVerifyId);
                     if (booking) {
                         booking.status = 'available';
@@ -1539,6 +1571,7 @@
                         bookings_count: allBookings.length,
                         pendingVerifications: allBookings.filter(b => b.status === 'pending_verification').length
                     });
+                    updateAnalytics();
                 } else {
                     throw new Error(result.message || 'Verification failed');
                 }
@@ -1556,13 +1589,19 @@
                 closeVerifyModal();
                 renderVerifications();
                 renderAllBookings();
+                updateStats({
+                    revenue: allBookings.filter(b => b.status === 'completed').reduce((sum, b) => sum + (parseFloat(b.fare) || 0), 0),
+                    commission: allBookings.filter(b => b.status === 'completed').reduce((sum, b) => sum + (parseFloat(b.fare) || 0) * 0.2, 0),
+                    bookings_count: allBookings.length,
+                    pendingVerifications: allBookings.filter(b => b.status === 'pending_verification').length
+                });
+                updateAnalytics();
             }
         }
 
         function rejectBooking(bookingId) {
             if (!confirm('Are you sure you want to reject this booking?')) return;
             
-            // Remove from local array
             allBookings = allBookings.filter(b => b.id !== bookingId);
             
             showToast('❌ Booking rejected');
@@ -1573,29 +1612,25 @@
                 bookings_count: allBookings.length,
                 pendingVerifications: allBookings.filter(b => b.status === 'pending_verification').length
             });
+            updateAnalytics();
         }
 
         function switchTab(tab) {
-            // Update tab buttons
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             event.target.closest('.tab').classList.add('active');
             
-            // Hide all panels
             document.getElementById('verificationsPanel').classList.add('hidden');
             document.getElementById('bookingsPanel').classList.add('hidden');
             document.getElementById('driversPanel').classList.add('hidden');
             document.getElementById('analyticsPanel').classList.add('hidden');
             
-            // Show selected panel
             document.getElementById(tab + 'Panel').classList.remove('hidden');
         }
 
         function filterBookings(filter) {
-            // Update filter buttons
             document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
             event.target.classList.add('active');
             
-            // Filter logic
             const container = document.getElementById('verificationsList');
             let filtered = allBookings;
             
@@ -1606,7 +1641,6 @@
                 });
             }
             
-            // Re-render with filtered data
             if (filtered.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
@@ -1617,41 +1651,68 @@
                 return;
             }
 
-            container.innerHTML = filtered.map(booking => `
-                <div class="booking-card ${booking.status}" data-booking-id="${booking.id}">
-                    <div class="booking-header">
-                        <div>
-                            <div class="booking-id">${booking.id}</div>
-                            <div style="font-size: 12px; color: #999; margin-top: 5px;">
-                                ${new Date(booking.timestamp).toLocaleString()}
+            container.innerHTML = filtered.map(booking => {
+                const status = (booking.status || '').toString().trim().toLowerCase();
+                let statusClass = '';
+                let statusText = '';
+                
+                switch(status) {
+                    case 'pending_verification':
+                        statusClass = 'status-pending';
+                        statusText = 'Pending';
+                        break;
+                    case 'available':
+                        statusClass = 'status-available';
+                        statusText = 'Available';
+                        break;
+                    case 'accepted':
+                        statusClass = 'status-accepted';
+                        statusText = 'Accepted';
+                        break;
+                    case 'completed':
+                        statusClass = 'status-completed';
+                        statusText = 'Completed';
+                        break;
+                    default:
+                        statusClass = 'status-pending';
+                        statusText = status;
+                }
+
+                return `
+                    <div class="booking-card ${status}" data-booking-id="${booking.id}">
+                        <div class="booking-header">
+                            <div>
+                                <div class="booking-id">${booking.id}</div>
+                                <div style="font-size: 12px; color: #999; margin-top: 5px;">
+                                    ${new Date(booking.timestamp).toLocaleString()}
+                                </div>
                             </div>
+                            <span class="booking-status ${statusClass}">${statusText}</span>
                         </div>
-                        <span class="booking-status status-${booking.status}">${booking.status}</span>
-                    </div>
-                    <div class="booking-details">
-                        <strong>👤</strong> ${booking.customerName}<br>
-                        <strong>📱</strong> ${booking.phone}<br>
-                        <strong>💰</strong> ₱${booking.fare} | <strong>Ref:</strong> ${booking.paymentRef}
-                    </div>
-                    <div class="booking-route">
-                                            <span>${booking.pickup}</span>
-                        <i class="fas fa-arrow-right route-arrow"></i>
-                        <span>${booking.destination}</span>
-                    </div>
-                    ${booking.status === 'pending_verification' ? `
-                        <div class="booking-actions">
-                            <button class="btn btn-verify verify-btn" data-action="verify" data-booking-id="${booking.id}">
-                                <i class="fas fa-check"></i> Verify Payment
-                            </button>
-                            <button class="btn btn-reject reject-btn" data-action="reject" data-booking-id="${booking.id}">
-                                <i class="fas fa-times"></i> Reject
-                            </button>
+                        <div class="booking-details">
+                            <strong>👤</strong> ${booking.customerName}<br>
+                            <strong>📱</strong> ${booking.phone}<br>
+                            <strong>💰</strong> ₱${booking.fare} | <strong>Ref:</strong> ${booking.paymentRef}
                         </div>
-                    ` : ''}
-                </div>
-            `).join('');
+                        <div class="booking-route">
+                            <span>${booking.pickup}</span>
+                            <i class="fas fa-arrow-right route-arrow"></i>
+                            <span>${booking.destination}</span>
+                        </div>
+                        ${status === 'pending_verification' ? `
+                            <div class="booking-actions">
+                                <button class="btn btn-verify verify-btn" data-action="verify" data-booking-id="${booking.id}">
+                                    <i class="fas fa-check"></i> Verify Payment
+                                </button>
+                                <button class="btn btn-reject reject-btn" data-action="reject" data-booking-id="${booking.id}">
+                                    <i class="fas fa-times"></i> Reject
+                                </button>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }).join('');
             
-            // Re-attach event listeners
             attachBookingEventListeners(container);
         }
 
@@ -1661,7 +1722,6 @@
         }
 
         function exportData() {
-            // CSV Export
             const csv = [
                 ['Booking ID', 'Service', 'Customer', 'Phone', 'Pickup', 'Destination', 'Fare', 'Status', 'Driver', 'Payment Ref'].join(','),
                 ...allBookings.map(b => [
